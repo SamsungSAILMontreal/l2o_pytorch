@@ -1,0 +1,7 @@
+.idea/
+data/
+results/
+.ipynb_checkpoints/
+pip-wheel-metadata/
+__pycache__/
+*egg-info/
