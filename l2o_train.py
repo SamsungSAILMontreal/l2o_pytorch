@@ -205,6 +205,7 @@ if __name__ == '__main__':
         inner_steps_count += 1
         if outer_upd:
             outer_steps_count += 1
+            time_count += 1
     print('best metaopt ckpt at outer step %d achieving test acc: %.3f' % (
         test_acc[np.argmax([x[1] for x in test_acc])]))
     print('done!', datetime.today())
