@@ -13,7 +13,7 @@ from torchvision import datasets, transforms
 from functools import partial
 
 
-TEST_TASKS = [
+TASKS = [
 
         {
             'net_args': {'hid': 20, 'im_size': 28},
@@ -59,7 +59,7 @@ cifar_normalize = ((0.49139968, 0.48215827, 0.44653124),
                    (0.24703233, 0.24348505, 0.26158768))
 
 
-def get_loader(dataset, data_dir='./data', batch_size=128, train=True):
+def get_loader(dataset, data_dir='./data', batch_size=None, train=True):
     transform = transforms.Compose(
         [
             transforms.ToTensor(),
@@ -70,7 +70,7 @@ def get_loader(dataset, data_dir='./data', batch_size=128, train=True):
         eval('datasets.%s(data_dir, train=train, download=True, transform=transform)' % dataset),
         pin_memory=torch.cuda.is_available(),
         num_workers=4,
-        batch_size=batch_size if train else 1000,
+        batch_size=(128 if batch_size is None else batch_size) if train else 1000,
         shuffle=train,
     )
     return loader

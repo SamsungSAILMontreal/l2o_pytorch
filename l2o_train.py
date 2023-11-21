@@ -25,7 +25,7 @@ from torch.optim import Adam, AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from models.metaopt import MetaOpt
 from l2o_eval import eval_opt, seed_everything, test_model
-from tasks import *
+from tasks import TASKS, TEST_SEEDS, trainloader_mapping, testloader_mapping
 from config import init_config, process
 
 
@@ -34,24 +34,18 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='l2o training')
     args = init_config(parser, steps=1000, inner_steps=100)
 
-    save_dir = ('results/'
-                'l2o_{}_{}_{}_lr{:.6f}_wd{:.6f}_mom{:.2f}_hid{}_layers{}_iters{}_innersteps{}{}_seed{}').format(
-        TEST_TASKS[args.train_tasks[0]]['dataset'],
-        args.train_tasks[0],
-        args.opt,
-        args.lr,
-        args.wd,
-        args.momentum,
-        args.hid,
-        args.layers,
-        args.steps,
-        args.inner_steps,
-        '' if args.no_preprocess else '_preproc',
-        args.seed)
+    first_task = args.train_tasks[0]
+    dset = TASKS[first_task]['dataset']
+    preproc_str = '' if args.no_preprocess else '_preproc'
+    save_dir = (f'results/'
+                f'l2o_{dset}_{first_task}_{args.opt}_lr{args.lr:.6f}_wd{args.wd:.6f}_b{args.batch_size}_'
+                f'mom{args.momentum:.2f}_hid{args.hid}_layers{args.layers}_'
+                f'iters{args.steps}_innersteps{args.inner_steps}{preproc_str}_seed{args.seed}')
     print('save_dir: %s\n' % save_dir)
 
-    if os.path.exists(os.path.join(save_dir, 'step_%d.pt' % args.steps)):
-        raise ValueError('Already trained', os.path.join(save_dir, 'step_%d.pt' % args.steps))
+    last_ckpt = os.path.join(save_dir, 'step_%d.pt' % args.steps)
+    if os.path.exists(last_ckpt):
+        raise ValueError('Already trained', last_ckpt)
 
     seed_everything(args.seed)
 
@@ -74,8 +68,10 @@ if __name__ == '__main__':
 
     model = None
     momentum = None
-    train_cfg = None
+    cfg = None
     train_loaders = {}
+    train_iters = {}
+    test_loaders = {}
     outer_steps_count = 0
     inner_steps_count = 0
     st = time.time()
@@ -87,31 +83,35 @@ if __name__ == '__main__':
 
         metaopt.train()
 
-        if train_cfg is None:
+        if cfg is None:
+            # new task
             seed_everything(outer_steps_count)
-            train_cfg = TEST_TASKS[np.random.choice(args.train_tasks)]
+            cfg = TASKS[np.random.choice(args.train_tasks)]
 
-        if train_cfg['dataset'] not in train_loaders or train_loaders[train_cfg['dataset']] is None:
+        dset = cfg['dataset']
+        if dset not in train_loaders:
             seed_everything(outer_steps_count)  # to make sure dataloaders are different each time
-            train_loaders[train_cfg['dataset']] = iter(trainloader_mapping[train_cfg['dataset']](
-                batch_size=train_cfg['batch_size']))
+            train_loaders[dset] = trainloader_mapping[dset](batch_size=args.batch_size)
+            test_loaders[dset] = testloader_mapping[dset]()
+
+        if dset not in train_iters:
+            train_iters[dset] = iter(train_loaders[dset])  # create a new iterator
 
         try:
-            data, target = next(train_loaders[train_cfg['dataset']])
+            data, target = next(train_iters[dset])
         except StopIteration:
-            train_loaders[train_cfg['dataset']] = iter(trainloader_mapping[train_cfg['dataset']](
-                batch_size=train_cfg['batch_size']))
-            data, target = next(train_loaders[train_cfg['dataset']])
+            train_iters[dset] = iter(train_loaders[dset])
+            data, target = next(train_iters[dset])
 
         data, target = data.to(args.device), target.to(args.device)
 
         if model is None:
-            model = eval(train_cfg['net_cls'])(**train_cfg['net_args']).to(args.device).train()
+            model = eval(cfg['net_cls'])(**cfg['net_args']).to(args.device).train()
             momentum = None
             inner_steps_count = 0
 
         loss_inner = F.cross_entropy(model(data), target)
-        loss_inner.backward(retain_graph=False)
+        loss_inner.backward()
 
         param_upd, momentum = metaopt(model.parameters(), momentum=momentum)  # upd momentum state and get param deltas
         metaopt.set_model_params(param_upd, model=model, keep_grad=True)
@@ -133,11 +133,11 @@ if __name__ == '__main__':
             optimizer.zero_grad()
 
             # test meta-optimized network to make sure it is improving
-            test_acc_, test_loss_ = test_model(model, args.device, testloader_mapping[train_cfg['dataset']]())
+            test_acc_, test_loss_ = test_model(model, args.device, test_loaders[dset])
 
             scheduler.step()
             model = None  # to reset the model/initial weights
-            train_cfg = None  # to let choose potentially different training tasks
+            cfg = None  # to let choose potentially different training tasks
 
             print('Training MetaOpt: '
                   'outer step={:05d}/{:05d}, '
@@ -180,10 +180,10 @@ if __name__ == '__main__':
             except Exception as e:
                 print('error in saving the checkpoint to %s' % file_path, e)
 
-            print('\nEval MetaOpt, task:', TEST_TASKS[args.train_tasks[0]])
+            print('\nEval MetaOpt, task:', TASKS[first_task])
             acc = []
             for seed in TEST_SEEDS:
-                acc.append(eval_opt(MetaOpt, TEST_TASKS[args.train_tasks[0]], args.device, seed,
+                acc.append(eval_opt(MetaOpt, TASKS[first_task], args.device, seed,
                                     print_interval=100,
                                     metaopt_cfg=metaopt_cfg,
                                     metaopt_state=metaopt.state_dict()))

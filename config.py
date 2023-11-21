@@ -46,6 +46,10 @@ def init_config(parser, steps=1000, inner_steps=None):
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--wd', type=float, default=1e-4)
     parser.add_argument('--opt', type=str, default='adam')
+    parser.add_argument('-b', '--batch_size', type=int, default=None,
+                        help='number of samples per batch used for training'
+                             '(default: None - use default batch size for each task from tasks.py)'
+                             'otherwise use the specified batch size')
     parser.add_argument('--seed', type=int, default=0, help='random seed defining initialization and data sampling')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--no_preprocess', action='store_true',

@@ -22,7 +22,7 @@ import torch.nn.functional as F
 import torchvision.models
 import models.vision
 from functools import partial
-from tasks import trainloader_mapping, testloader_mapping, TEST_TASKS, TEST_SEEDS
+from tasks import trainloader_mapping, testloader_mapping, TASKS, TEST_SEEDS
 from config import init_config, process
 from models.metaopt import MetaOpt
 
@@ -89,7 +89,7 @@ def eval_opt(opt_cls, test_cfg, device, seed, print_interval=100, max_iters=1000
         opt = opt_cls(net.parameters())
 
     t = time.time()
-    train_loader = trainloader_mapping[test_cfg['dataset']](batch_size=test_cfg['batch_size'])
+    train_loader = trainloader_mapping[test_cfg['dataset']](batch_size=args.batch_size)
     test_loader = testloader_mapping[test_cfg['dataset']]()
     epochs = int(np.ceil(max_iters / len(train_loader)))
     step = 0
@@ -101,7 +101,7 @@ def eval_opt(opt_cls, test_cfg, device, seed, print_interval=100, max_iters=1000
             loss.backward()
 
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-            acc = pred.eq(y.view_as(pred)).sum() / len(y)
+            acc = 100.0 * pred.eq(y.view_as(pred)).sum() / len(y)
 
             opt.step()
             opt.zero_grad()
@@ -129,7 +129,7 @@ def eval_opt(opt_cls, test_cfg, device, seed, print_interval=100, max_iters=1000
         if step >= max_iters:
             break
 
-    test_acc_, test_loss_ = test_model(net, device, testloader_mapping[test_cfg['dataset']]())
+    test_acc_, test_loss_ = test_model(net, device, test_loader)
     print('seed: {}, test loss: {:.3f}, test accuracy: {:.3f}\n'.format(seed,
                                                                         test_loss_,
                                                                         test_acc_))
@@ -170,7 +170,7 @@ if __name__ == '__main__':
               'loaded from step %d' % state_dict['step'])
 
     for task in args.train_tasks:
-        cgf = TEST_TASKS[task]
+        cgf = TASKS[task]
         print('\nEval %s, task:' % str(metaopt), cgf)
         acc = []
         for seed in TEST_SEEDS:
